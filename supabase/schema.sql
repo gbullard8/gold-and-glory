@@ -39,7 +39,7 @@ begin
  if btrim(coalesce(p_name,''))='' or coalesce(p_password,'')='' then return jsonb_build_object('ok',false,'error','Name and password are required.'); end if;
  if exists(select 1 from public.characters where name_normalized=lower(btrim(p_name))) then return jsonb_build_object('ok',false,'error','That character name already exists.'); end if;
  insert into public.characters(name,password_hash,sheet) values(btrim(p_name),crypt(p_password,gen_salt('bf')),
- '{"resources":[{"name":"HP","current":36,"max":36},{"name":"Mana","current":10,"max":10},{"name":"Armor","current":2,"max":null}],"attributes":{"Strength":12,"Attunement":10,"Dexterity":12,"Speed":12,"Fortitude":12,"Willpower":8,"Luck":1},"items":[],"loot":[],"weaponXp":[],"skills":[],"notes":""}'::jsonb) returning * into c;
+ '{"resources":[{"name":"HP","current":30,"max":30},{"name":"Ward","current":0,"max":0},{"name":"Mana","current":10,"max":10},{"name":"Armor","current":0,"max":null},{"name":"Accuracy","current":0,"max":null}],"attributes":{"Strength":10,"Attunement":10,"Dexterity":10,"Speed":10,"Fortitude":10,"Willpower":10,"Luck":1},"items":[],"loot":[],"weaponXp":[],"skills":[],"notes":"","maxHpBonus":0,"maxManaBonus":0}'::jsonb) returning * into c;
  insert into public.sessions(character_id) values(c.id) returning token into t;
  return jsonb_build_object('ok',true,'character_id',c.id,'token',t);
 exception when unique_violation then return jsonb_build_object('ok',false,'error','That character name already exists.');
