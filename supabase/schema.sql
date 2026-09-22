@@ -227,6 +227,19 @@ grant execute on function public.host_next_turn(uuid) to anon,authenticated;
 grant execute on function public.host_previous_turn(uuid) to anon,authenticated;
 grant execute on function public.host_end_initiative(uuid) to anon,authenticated;
 
+create or replace function public.host_reset_character_password(p_token uuid,p_character_id uuid,p_new_password text)
+returns jsonb language plpgsql security definer set search_path=public,extensions as $
+begin
+ if not exists(select 1 from public.sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ if coalesce(p_new_password,'')='' then return jsonb_build_object('ok',false,'error','Password is required.'); end if;
+ update public.characters set password_hash=crypt(p_new_password,gen_salt('bf')),updated_at=now() where id=p_character_id and deleted_at is null;
+ if not found then return jsonb_build_object('ok',false,'error','Character not found.'); end if;
+ delete from public.sessions where character_id=p_character_id and not is_host;
+ return jsonb_build_object('ok',true);
+end $;
+
+grant execute on function public.host_reset_character_password(uuid,uuid,text) to anon,authenticated;
+
 grant execute on function public.create_character(text,text) to anon,authenticated;
 grant execute on function public.open_character(text,text) to anon,authenticated;
 grant execute on function public.get_character(uuid,uuid) to anon,authenticated;
