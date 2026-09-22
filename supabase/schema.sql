@@ -121,6 +121,112 @@ begin
  return n;
 end $;
 
+
+create table if not exists public.initiative_state (
+ id integer primary key default 1 check(id=1),
+ active boolean not null default false,
+ started boolean not null default false,
+ round integer not null default 1,
+ turn_index integer not null default 0,
+ entries jsonb not null default '[]'::jsonb,
+ updated_at timestamptz not null default now()
+);
+insert into public.initiative_state(id) values(1) on conflict(id) do nothing;
+alter table public.initiative_state enable row level security;
+revoke all on public.initiative_state from anon,authenticated;
+
+create or replace function public.host_get_initiative(p_token uuid) returns jsonb language plpgsql security definer set search_path=public as $
+declare s public.initiative_state;
+begin
+ if not exists(select 1 from sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ select * into s from initiative_state where id=1;
+ return jsonb_build_object('ok',true,'initiative',jsonb_build_object('active',s.active,'started',s.started,'round',s.round,'turn_index',s.turn_index,'entries',s.entries));
+end $;
+
+create or replace function public.player_get_initiative(p_token uuid,p_character_id uuid) returns jsonb language plpgsql security definer set search_path=public as $
+declare s public.initiative_state;
+begin
+ if not exists(select 1 from sessions where token=p_token and character_id=p_character_id and not is_host) then return jsonb_build_object('ok',false); end if;
+ select * into s from initiative_state where id=1;
+ if not s.active or not exists(select 1 from jsonb_array_elements(s.entries) e where e->>'type'='player' and e->>'id'=p_character_id::text) then return jsonb_build_object('ok',true,'initiative',jsonb_build_object('active',false)); end if;
+ return jsonb_build_object('ok',true,'initiative',jsonb_build_object('active',s.active,'started',s.started,'round',s.round,'turn_index',s.turn_index,'entries',s.entries));
+end $;
+
+create or replace function public.host_start_initiative(p_token uuid,p_players jsonb) returns jsonb language plpgsql security definer set search_path=public as $
+declare e jsonb;
+begin
+ if not exists(select 1 from sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ select coalesce(jsonb_agg(jsonb_build_object('key','p:'||(x->>'id'),'id',x->>'id','name',x->>'name','type','player','roll',null)),'[]'::jsonb) into e from jsonb_array_elements(p_players) x;
+ update initiative_state set active=true,started=false,round=1,turn_index=0,entries=e,updated_at=now() where id=1;
+ return jsonb_build_object('ok',true);
+end $;
+
+create or replace function public.host_set_initiative_roll(p_token uuid,p_key text,p_roll integer) returns jsonb language plpgsql security definer set search_path=public as $
+begin
+ if not exists(select 1 from sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ update initiative_state set entries=(select jsonb_agg(case when e->>'key'=p_key then jsonb_set(e,'{roll}',to_jsonb(p_roll),true) else e end order by coalesce((case when e->>'key'=p_key then p_roll else (e->>'roll')::int end),-999) desc) from jsonb_array_elements(entries) e),turn_index=0,updated_at=now() where id=1;
+ return jsonb_build_object('ok',true);
+end $;
+
+create or replace function public.host_add_initiative_npc(p_token uuid,p_name text,p_roll integer) returns jsonb language plpgsql security definer set search_path=public as $
+begin
+ if not exists(select 1 from sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ update initiative_state set entries=entries||jsonb_build_array(jsonb_build_object('key','n:'||gen_random_uuid()::text,'name',btrim(p_name),'type','npc','roll',p_roll)),updated_at=now() where id=1;
+ return jsonb_build_object('ok',true);
+end $;
+
+create or replace function public.host_remove_initiative_entry(p_token uuid,p_key text) returns jsonb language plpgsql security definer set search_path=public as $
+begin
+ if not exists(select 1 from sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ update initiative_state set entries=(select coalesce(jsonb_agg(e),'[]'::jsonb) from jsonb_array_elements(entries) e where e->>'key'<>p_key),turn_index=0,updated_at=now() where id=1;
+ return jsonb_build_object('ok',true);
+end $;
+
+create or replace function public.host_begin_initiative(p_token uuid) returns jsonb language plpgsql security definer set search_path=public as $
+begin
+ if not exists(select 1 from sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ update initiative_state set entries=(select coalesce(jsonb_agg(e order by coalesce((e->>'roll')::int,-999) desc),'[]'::jsonb) from jsonb_array_elements(entries)e),started=true,round=1,turn_index=0,updated_at=now() where id=1;
+ return jsonb_build_object('ok',true);
+end $;
+
+create or replace function public.host_next_turn(p_token uuid) returns jsonb language plpgsql security definer set search_path=public as $
+declare n int;i int;r int;
+begin
+ if not exists(select 1 from sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ select jsonb_array_length(entries),turn_index,round into n,i,r from initiative_state where id=1;
+ if n>0 then if i+1>=n then i:=0;r:=r+1; else i:=i+1; end if; end if;
+ update initiative_state set turn_index=i,round=r,updated_at=now() where id=1;
+ return jsonb_build_object('ok',true);
+end $;
+
+create or replace function public.host_previous_turn(p_token uuid) returns jsonb language plpgsql security definer set search_path=public as $
+declare n int;i int;r int;
+begin
+ if not exists(select 1 from sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ select jsonb_array_length(entries),turn_index,round into n,i,r from initiative_state where id=1;
+ if n>0 then if i<=0 then i:=n-1;r:=greatest(1,r-1); else i:=i-1; end if; end if;
+ update initiative_state set turn_index=i,round=r,updated_at=now() where id=1;
+ return jsonb_build_object('ok',true);
+end $;
+
+create or replace function public.host_end_initiative(p_token uuid) returns jsonb language plpgsql security definer set search_path=public as $
+begin
+ if not exists(select 1 from sessions where token=p_token and is_host) then return jsonb_build_object('ok',false); end if;
+ update initiative_state set active=false,started=false,round=1,turn_index=0,entries='[]'::jsonb,updated_at=now() where id=1;
+ return jsonb_build_object('ok',true);
+end $;
+
+grant execute on function public.host_get_initiative(uuid) to anon,authenticated;
+grant execute on function public.player_get_initiative(uuid,uuid) to anon,authenticated;
+grant execute on function public.host_start_initiative(uuid,jsonb) to anon,authenticated;
+grant execute on function public.host_set_initiative_roll(uuid,text,integer) to anon,authenticated;
+grant execute on function public.host_add_initiative_npc(uuid,text,integer) to anon,authenticated;
+grant execute on function public.host_remove_initiative_entry(uuid,text) to anon,authenticated;
+grant execute on function public.host_begin_initiative(uuid) to anon,authenticated;
+grant execute on function public.host_next_turn(uuid) to anon,authenticated;
+grant execute on function public.host_previous_turn(uuid) to anon,authenticated;
+grant execute on function public.host_end_initiative(uuid) to anon,authenticated;
+
 grant execute on function public.create_character(text,text) to anon,authenticated;
 grant execute on function public.open_character(text,text) to anon,authenticated;
 grant execute on function public.get_character(uuid,uuid) to anon,authenticated;
