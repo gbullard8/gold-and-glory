@@ -152,6 +152,16 @@ begin
  return jsonb_build_object('ok',true,'initiative',jsonb_build_object('active',s.active,'started',s.started,'round',s.round,'turn_index',s.turn_index,'entries',s.entries));
 end $;
 
+create or replace function public.player_set_initiative_roll(p_token uuid,p_character_id uuid,p_roll integer)
+returns jsonb language plpgsql security definer set search_path=public as $
+begin
+ if not exists(select 1 from sessions where token=p_token and character_id=p_character_id and not is_host) then return jsonb_build_object('ok',false); end if;
+ if not exists(select 1 from initiative_state s,jsonb_array_elements(s.entries)e where s.id=1 and s.active and e->>'type'='player' and e->>'id'=p_character_id::text) then return jsonb_build_object('ok',false); end if;
+ update initiative_state set entries=(select jsonb_agg(case when e->>'type'='player' and e->>'id'=p_character_id::text then jsonb_set(e,'{roll}',to_jsonb(p_roll),true) else e end order by coalesce((case when e->>'type'='player' and e->>'id'=p_character_id::text then p_roll else (e->>'roll')::int end),-999) desc) from jsonb_array_elements(entries)e),turn_index=0,updated_at=now() where id=1 and active;
+ return jsonb_build_object('ok',true);
+end $;
+grant execute on function public.player_set_initiative_roll(uuid,uuid,integer) to anon,authenticated;
+
 create or replace function public.host_start_initiative(p_token uuid,p_players jsonb) returns jsonb language plpgsql security definer set search_path=public as $
 declare e jsonb;
 begin
