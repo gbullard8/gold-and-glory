@@ -66,3 +66,9 @@
 }
 @media(max-width:420px){.dice-tray{min-height:195px}.rolling-die{width:65px;height:71px}.rolling-die-svg{height:65px}.dice-tumble-group{gap:6px;padding:14px}}
 @media(prefers-reduced-motion:reduce){.rolling-die{animation:none}}
+
+/* Real 3D WebGL dice. SVG dice remain visible when WebGL or the module is unavailable. */
+.dice-tray{position:relative;isolation:isolate}
+.dice-three-stage{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+.dice-three-stage canvas{display:block;width:100%;height:100%}
+.dice-tray.dice-3d-active .dice-tumble-group{visibility:hidden}
