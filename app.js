@@ -33,17 +33,53 @@ function diceRandom(sides){
 }
 function closeDice(){document.getElementById("diceOverlay")?.remove();document.removeEventListener("keydown",diceEscape)}
 function diceEscape(e){if(e.key==="Escape")closeDice()}
+let diceSoundEnabled=true;
 function diceSound(){
+  if(!diceSoundEnabled)return;
   try{
     const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
-    const ctx=new Audio(),osc=ctx.createOscillator(),gain=ctx.createGain();
-    osc.type="triangle";osc.frequency.setValueAtTime(300,ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(130,ctx.currentTime+.17);
-    gain.gain.setValueAtTime(.04,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.18);
-    osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+.19);
-    setTimeout(()=>ctx.close().catch(()=>{}),500);
+    const ctx=new Audio();
+    if(ctx.state==="suspended")ctx.resume().catch(()=>{});
+    const length=.055,rate=ctx.sampleRate,buffer=ctx.createBuffer(1,Math.ceil(rate*length),rate);
+    const samples=buffer.getChannelData(0);
+    for(let i=0;i<samples.length;i++)samples[i]=(Math.random()*2-1)*Math.exp(-i/rate*72);
+    [0,.07,.16,.27,.4,.54,.69,.84,1.01,1.17].forEach((time,i)=>{
+      const t=ctx.currentTime+time,src=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),gain=ctx.createGain();
+      src.buffer=buffer;filter.type="bandpass";filter.frequency.value=750+Math.random()*1800;filter.Q.value=.6+Math.random();
+      const volume=(.12+Math.random()*.1)*Math.pow(1-i/11,1.4);
+      gain.gain.setValueAtTime(volume,t);gain.gain.exponentialRampToValueAtTime(.0001,t+length);
+      src.connect(filter);filter.connect(gain);gain.connect(ctx.destination);src.start(t);src.stop(t+length);
+      const thud=ctx.createOscillator(),thudGain=ctx.createGain();
+      thud.type="sine";thud.frequency.setValueAtTime(170+Math.random()*60,t);
+      thud.frequency.exponentialRampToValueAtTime(75,t+.055);
+      thudGain.gain.setValueAtTime(volume*.22,t);thudGain.gain.exponentialRampToValueAtTime(.0001,t+.06);
+      thud.connect(thudGain);thudGain.connect(ctx.destination);thud.start(t);thud.stop(t+.065);
+    });
+    setTimeout(()=>ctx.close().catch(()=>{}),1900);
   }catch(e){}
+}
+function diceShape(sides,number){
+  const shapes={
+    4:'<polygon points="50,8 94,88 6,88"/><path d="M50 8L50 88M6 88L50 57L94 88"/>',
+    6:'<polygon points="20,18 76,12 92,32 86,83 29,91 9,69"/><path d="M20 18L32 36L92 32M32 36L29 91M32 36L9 69M76 12L68 33L86 83"/>',
+    8:'<polygon points="50,5 93,50 50,95 7,50"/><path d="M50 5L50 95M7 50L93 50M7 50L50 26L93 50"/>',
+    10:'<polygon points="50,5 88,24 96,56 50,95 4,56 12,24"/><path d="M50 5L50 95M12 24L50 39L88 24M4 56L50 39L96 56"/>',
+    12:'<polygon points="50,4 75,11 92,30 96,57 78,85 50,96 22,85 4,57 8,30 25,11"/><path d="M50 4L62 29L83 40L75 67L50 82L25 67L17 40L38 29ZM38 29L62 29M25 67L75 67"/>',
+    20:'<polygon points="50,4 79,13 96,42 88,75 50,96 12,75 4,42 21,13"/><path d="M50 4L50 28L21 13M50 28L79 13M50 28L23 55L4 42M50 28L77 55L96 42M23 55L50 96L77 55M23 55L12 75M77 55L88 75"/>',
+    100:'<polygon points="50,5 88,24 96,56 50,95 4,56 12,24"/><path d="M50 5L50 95M12 24L50 39L88 24M4 56L50 39L96 56"/>'
+  };
+  return '<svg class="rolling-die-svg" viewBox="0 0 100 100" aria-hidden="true"><g class="die-geometry">'+shapes[sides]+'</g><text x="50" y="58" text-anchor="middle" class="die-number">'+number+'</text></svg>';
+}
+function diceRollingScene(selected){
+  const shown=[];
+  for(const sides of selected){for(let i=0;i<diceAmounts[sides]&&shown.length<8;i++)shown.push(sides);if(shown.length===8)break}
+  const count=selected.reduce((sum,n)=>sum+diceAmounts[n],0);
+  return '<div class="paper dice-dialog dice-rolling" role="dialog" aria-modal="true" aria-label="Rolling dice">'+
+    '<h2>Rolling Dice…</h2><div class="dice-tray"><div class="dice-tumble-group">'+
+    shown.map((n,i)=>'<div class="rolling-die" style="--die-index:'+i+';--die-rotation:'+(i%2?-1:1)+'" data-rolling-sides="'+n+'">'+
+      diceShape(n,diceRandom(n))+'<span class="rolling-die-label">d'+n+'</span></div>').join("")+
+    '</div></div>'+(count>shown.length?'<p class="muted">Rolling '+count+' dice (showing '+shown.length+')</p>':'')+
+    '<p class="muted">The dice are tumbling…</p></div>';
 }
 function openDice(){
   if(!active?.sheet)return;
@@ -59,10 +95,12 @@ function openDice(){
     '<h3>Add character stats</h3><div class="dice-bonuses">'+["Accuracy","Evasion","Strength","Attunement"].map(k=>
       '<label><input type="checkbox" data-dice-add="'+k+'" '+(diceAdditions[k]?"checked":"")+'>'+k+' <b>'+sign(diceValue(k))+'</b></label>').join("")+'</div>'+
     '<p class="muted dice-note">Strength and Attunement add their full scores. Accuracy and Evasion use the values on your sheet.</p>'+
+    '<label class="dice-sound-toggle"><input type="checkbox" id="diceSoundToggle" '+(diceSoundEnabled?"checked":"")+'> Dice clatter sound</label>'+
     '<div id="diceError" class="error" aria-live="polite"></div><button type="button" id="diceRoll" class="btn dice-primary">Roll Dice</button></div>';
   document.body.appendChild(overlay);
   overlay.onclick=e=>{if(e.target===overlay)closeDice()};
   overlay.querySelector(".dice-close").onclick=closeDice;
+  overlay.querySelector("#diceSoundToggle").onchange=e=>{diceSoundEnabled=e.target.checked};
   overlay.querySelectorAll("[data-dice-add]").forEach(input=>input.onchange=()=>{diceAdditions[input.dataset.diceAdd]=input.checked});
   overlay.querySelectorAll("[data-dice-amount]").forEach(input=>{
     input.oninput=()=>{diceAmounts[input.dataset.diceAmount]=Math.max(0,Math.min(99,Number.parseInt(input.value,10)||0))};
