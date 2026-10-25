@@ -16,7 +16,92 @@ async function openPlayer(id){const token=sessionStorage.getItem("gg_token");ses
 function mod(v,name){const n=Number(v)||0;return name==="Luck"?n:n-10}
 function syncDerivedResources(){if(!active?.sheet)return;const s=active.sheet;const fort=Number(s.attributes?.Fortitude)||0,att=Number(s.attributes?.Attunement)||0;const hp=s.resources?.find(r=>String(r.name).toLowerCase()==="hp"),mana=s.resources?.find(r=>String(r.name).toLowerCase()==="mana");if(hp)hp.max=fort*5+(Number(s.maxHpBonus)||0);if(mana)mana.max=att+(Number(s.maxManaBonus)||0)}
 function sign(n){return n>=0?"+"+n:String(n)}
-function renderSheet(){const s=active.sheet||structuredClone(DEFAULT_SHEET);active.sheet=s;if(!Array.isArray(s.resources))s.resources=[];if(!s.resources.some(r=>String(r.name).toLowerCase()==="ward"))s.resources.splice(Math.min(1,s.resources.length),0,{name:"Ward",current:0,max:0});if(!s.resources.some(r=>String(r.name).toLowerCase()==="mana well")){const manaIndex=s.resources.findIndex(r=>String(r.name).toLowerCase()==="mana");s.resources.splice(manaIndex>=0?manaIndex+1:s.resources.length,0,{name:"Mana Well",current:0,max:0})}if(!s.resources.some(r=>String(r.name).toLowerCase()==="accuracy"))s.resources.push({name:"Accuracy",current:0,max:null});if(!s.resources.some(r=>String(r.name).toLowerCase()==="evasion"))s.resources.push({name:"Evasion",current:0,max:null});syncDerivedResources();app.innerHTML='<div class="page"><div id="playerInitiative"></div><div class="paper"><div class="sheet-head"><div><h1>'+esc(active.name)+'</h1><span class="save-state" id="saveState">Saved</span></div><button class="btn secondary small" id="logout">Exit Character</button></div><section><div class="resources" id="resources"></div></section><div class="grid"><section class="card"><h2>Attributes</h2><div class="stats" id="attrs"></div></section><div><section class="card section"><h2>Items</h2><div id="items"></div><button class="btn secondary small" data-add="items">+ Item</button></section><section class="card section"><h2>Loot</h2><div id="loot"></div><button class="btn secondary small" data-add="loot">+ Loot</button></section><section class="card section"><h2>Weapon Experience</h2><div id="weaponXp"></div><button class="btn secondary small" data-add="weaponXp">+ Weapon Type</button></section><section class="card section"><h2>Skills</h2><div id="skills"></div><button class="btn secondary small" data-add="skills">+ Skill</button></section><section class="card"><h2>Notes</h2><textarea id="notes" class="editable" rows="5">'+esc(s.notes)+'</textarea></section><section class="card section"><h2>Maximum Resource Overrides</h2><p class="muted">Add bonuses from items or other effects. These are added to the normal calculated maximum.</p><div class="override-row"><label>Max HP Bonus <input id="maxHpBonus" type="number" inputmode="numeric" value="'+Number(s.maxHpBonus||0)+'"></label><label>Max Mana Bonus <input id="maxManaBonus" type="number" inputmode="numeric" value="'+Number(s.maxManaBonus||0)+'"></label></div></section></div></div></div></div>';drawResources();drawAttrs();["items","loot","weaponXp","skills"].forEach(drawList);document.getElementById("logout").onclick=()=>{sessionStorage.removeItem("gg_token");sessionStorage.removeItem("gg_character_id");sessionStorage.removeItem("gg_view");history.replaceState(null,"",location.pathname+location.search);if(window.ggPlayerPoll){clearInterval(window.ggPlayerPoll);window.ggPlayerPoll=null}if(initiativeChannel&&db){db.removeChannel(initiativeChannel);initiativeChannel=null}active=null;playerMenu()};document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{const k=b.dataset.add;s[k].push(k==="weaponXp"?{name:"",xp:0}:{name:"",value:"",notes:""});drawList(k);queueSave()});document.getElementById("notes").oninput=e=>{s.notes=e.target.value;queueSave()};document.getElementById("maxHpBonus").oninput=e=>{s.maxHpBonus=Number(e.target.value)||0;syncDerivedResources();updateDerivedResourceInputs();queueSave()};document.getElementById("maxManaBonus").oninput=e=>{s.maxManaBonus=Number(e.target.value)||0;syncDerivedResources();updateDerivedResourceInputs();queueSave()}}
+function renderSheet(){const s=active.sheet||structuredClone(DEFAULT_SHEET);active.sheet=s;if(!Array.isArray(s.resources))s.resources=[];if(!s.resources.some(r=>String(r.name).toLowerCase()==="ward"))s.resources.splice(Math.min(1,s.resources.length),0,{name:"Ward",current:0,max:0});if(!s.resources.some(r=>String(r.name).toLowerCase()==="mana well")){const manaIndex=s.resources.findIndex(r=>String(r.name).toLowerCase()==="mana");s.resources.splice(manaIndex>=0?manaIndex+1:s.resources.length,0,{name:"Mana Well",current:0,max:0})}if(!s.resources.some(r=>String(r.name).toLowerCase()==="accuracy"))s.resources.push({name:"Accuracy",current:0,max:null});if(!s.resources.some(r=>String(r.name).toLowerCase()==="evasion"))s.resources.push({name:"Evasion",current:0,max:null});syncDerivedResources();app.innerHTML='<div class="page"><div id="playerInitiative"></div><div class="paper"><div class="sheet-head"><div><h1>'+esc(active.name)+'</h1><span class="save-state" id="saveState">Saved</span></div><button class="btn secondary small" id="logout">Exit Character</button></div><section><div class="resources" id="resources"></div></section><div class="grid"><section class="card"><h2>Attributes</h2><div class="stats" id="attrs"></div></section><div><section class="card section"><h2>Items</h2><div id="items"></div><button class="btn secondary small" data-add="items">+ Item</button></section><section class="card section"><h2>Loot</h2><div id="loot"></div><button class="btn secondary small" data-add="loot">+ Loot</button></section><section class="card section"><h2>Weapon Experience</h2><div id="weaponXp"></div><button class="btn secondary small" data-add="weaponXp">+ Weapon Type</button></section><section class="card section"><h2>Skills</h2><div id="skills"></div><button class="btn secondary small" data-add="skills">+ Skill</button></section><section class="card"><h2>Notes</h2><textarea id="notes" class="editable" rows="5">'+esc(s.notes)+'</textarea></section><section class="card section"><h2>Maximum Resource Overrides</h2><p class="muted">Add bonuses from items or other effects. These are added to the normal calculated maximum.</p><div class="override-row"><label>Max HP Bonus <input id="maxHpBonus" type="number" inputmode="numeric" value="'+Number(s.maxHpBonus||0)+'"></label><label>Max Mana Bonus <input id="maxManaBonus" type="number" inputmode="numeric" value="'+Number(s.maxManaBonus||0)+'"></label></div></section></div></div></div></div>';drawResources();drawAttrs();["items","loot","weaponXp","skills"].forEach(drawList);document.getElementById("logout").onclick=()=>{sessionStorage.removeItem("gg_token");sessionStorage.removeItem("gg_character_id");sessionStorage.removeItem("gg_view");history.replaceState(null,"",location.pathname+location.search);if(window.ggPlayerPoll){clearInterval(window.ggPlayerPoll);window.ggPlayerPoll=null}if(initiativeChannel&&db){db.removeChannel(initiativeChannel);initiativeChannel=null}active=null;playerMenu()};document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{const k=b.dataset.add;s[k].push(k==="weaponXp"?{name:"",xp:0}:{name:"",value:"",notes:""});drawList(k);queueSave()});document.getElementById("notes").oninput=e=>{s.notes=e.target.value;queueSave()};document.getElementById("maxHpBonus").oninput=e=>{s.maxHpBonus=Number(e.target.value)||0;syncDerivedResources();updateDerivedResourceInputs();queueSave()};document.getElementById("maxManaBonus").oninput=e=>{s.maxManaBonus=Number(e.target.value)||0;syncDerivedResources();updateDerivedResourceInputs();queueSave()};initDiceRoller()}
+
+const DICE_TYPES=[4,6,8,10,12,20,100],diceAmounts={20:1},diceAdditions={};
+function diceValue(key){
+  if(key==="Strength"||key==="Attunement")return Number(active?.sheet?.attributes?.[key])||0;
+  return Number(active?.sheet?.resources?.find(x=>String(x.name).toLowerCase()===key.toLowerCase())?.current)||0;
+}
+function diceRandom(sides){
+  if(window.crypto?.getRandomValues){
+    const array=new Uint32Array(1),limit=Math.floor(4294967296/sides)*sides;
+    do{window.crypto.getRandomValues(array)}while(array[0]>=limit);
+    return 1+array[0]%sides;
+  }
+  return 1+Math.floor(Math.random()*sides);
+}
+function closeDice(){document.getElementById("diceOverlay")?.remove();document.removeEventListener("keydown",diceEscape)}
+function diceEscape(e){if(e.key==="Escape")closeDice()}
+function diceSound(){
+  try{
+    const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
+    const ctx=new Audio(),osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.type="triangle";osc.frequency.setValueAtTime(300,ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(130,ctx.currentTime+.17);
+    gain.gain.setValueAtTime(.04,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.18);
+    osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+.19);
+    setTimeout(()=>ctx.close().catch(()=>{}),500);
+  }catch(e){}
+}
+function openDice(){
+  if(!active?.sheet)return;
+  closeDice();
+  const overlay=document.createElement("div");overlay.id="diceOverlay";overlay.className="dice-overlay";
+  overlay.innerHTML='<div class="paper dice-dialog" role="dialog" aria-modal="true" aria-label="Dice roller">'+
+    '<div class="dice-title"><h2>🎲 Dice Roller</h2><button class="dice-close" type="button" aria-label="Close">×</button></div>'+
+    '<p class="muted">Choose the number of each die to roll.</p>'+
+    '<div class="dice-types">'+DICE_TYPES.map(n=>'<label class="dice-type"><b>d'+n+'</b><span class="dice-quantity">'+
+      '<button type="button" data-dice-down="'+n+'" aria-label="Remove d'+n+'">−</button>'+
+      '<input type="text" inputmode="numeric" pattern="[0-9]*" data-dice-amount="'+n+'" aria-label="Number of d'+n+'" value="'+(diceAmounts[n]||0)+'">'+
+      '<button type="button" data-dice-up="'+n+'" aria-label="Add d'+n+'">+</button></span></label>').join("")+'</div>'+
+    '<h3>Add character stats</h3><div class="dice-bonuses">'+["Accuracy","Evasion","Strength","Attunement"].map(k=>
+      '<label><input type="checkbox" data-dice-add="'+k+'" '+(diceAdditions[k]?"checked":"")+'>'+k+' <b>'+sign(diceValue(k))+'</b></label>').join("")+'</div>'+
+    '<p class="muted dice-note">Strength and Attunement add their full scores. Accuracy and Evasion use the values on your sheet.</p>'+
+    '<div id="diceError" class="error" aria-live="polite"></div><button type="button" id="diceRoll" class="btn dice-primary">Roll Dice</button></div>';
+  document.body.appendChild(overlay);
+  overlay.onclick=e=>{if(e.target===overlay)closeDice()};
+  overlay.querySelector(".dice-close").onclick=closeDice;
+  overlay.querySelectorAll("[data-dice-add]").forEach(input=>input.onchange=()=>{diceAdditions[input.dataset.diceAdd]=input.checked});
+  overlay.querySelectorAll("[data-dice-amount]").forEach(input=>{
+    input.oninput=()=>{diceAmounts[input.dataset.diceAmount]=Math.max(0,Math.min(99,Number.parseInt(input.value,10)||0))};
+    input.onblur=()=>{input.value=diceAmounts[input.dataset.diceAmount]||0};
+  });
+  overlay.querySelectorAll("[data-dice-up],[data-dice-down]").forEach(button=>button.onclick=()=>{
+    const n=Number(button.dataset.diceUp||button.dataset.diceDown),delta=button.hasAttribute("data-dice-up")?1:-1;
+    diceAmounts[n]=Math.max(0,Math.min(99,(diceAmounts[n]||0)+delta));
+    overlay.querySelector('[data-dice-amount="'+n+'"]').value=diceAmounts[n];
+  });
+  overlay.querySelector("#diceRoll").onclick=()=>{
+    const selected=DICE_TYPES.filter(n=>diceAmounts[n]>0),quantity=selected.reduce((sum,n)=>sum+diceAmounts[n],0);
+    if(quantity<1||quantity>100){overlay.querySelector("#diceError").textContent=quantity?"Limit: 100 dice per roll.":"Choose at least one die.";return}
+    const rolls=selected.map(n=>({n,values:Array.from({length:diceAmounts[n]},()=>diceRandom(n))}));
+    const diceTotal=rolls.reduce((sum,g)=>sum+g.values.reduce((a,b)=>a+b,0),0);
+    const additions=["Accuracy","Evasion","Strength","Attunement"].filter(k=>diceAdditions[k]).map(k=>({name:k,value:diceValue(k)}));
+    const bonus=additions.reduce((sum,x)=>sum+x.value,0),total=diceTotal+bonus;
+    diceSound();
+    overlay.innerHTML='<div class="paper dice-dialog dice-rolling" role="dialog" aria-modal="true"><div class="dice-animated">🎲</div><h2>Rolling…</h2></div>';
+    setTimeout(()=>{
+      if(!overlay.isConnected)return;
+      overlay.innerHTML='<div class="paper dice-dialog dice-result" role="dialog" aria-modal="true" aria-label="Dice result">'+
+        '<div class="dice-title"><h2>Roll Result</h2><button type="button" class="dice-close" aria-label="Close">×</button></div>'+
+        '<div class="dice-total">'+total+'</div><p>Dice: '+diceTotal+(additions.length?' · Bonus: '+sign(bonus):'')+'</p>'+
+        '<div class="dice-details">'+rolls.map(g=>'<div><b>'+g.values.length+'d'+g.n+':</b> '+g.values.join(", ")+'</div>').join("")+
+        additions.map(x=>'<div><b>'+esc(x.name)+':</b> '+sign(x.value)+'</div>').join("")+'</div>'+
+        '<p class="muted">Tap outside to dismiss, or roll again.</p><button type="button" id="diceAgain" class="btn dice-primary">Roll Again</button></div>';
+      overlay.querySelector(".dice-close").onclick=closeDice;
+      overlay.querySelector("#diceAgain").onclick=openDice;
+    },550);
+  };
+  document.addEventListener("keydown",diceEscape);
+}
+function initDiceRoller(){
+  const button=document.createElement("button");button.type="button";button.id="diceFab";button.className="dice-fab";
+  button.textContent="🎲";button.setAttribute("aria-label","Open dice roller");button.title="Roll dice";
+  button.onclick=openDice;app.appendChild(button);
+}
+
 function drawResources(){const el=document.getElementById("resources");el.innerHTML=active.sheet.resources.map((r,i)=>'<div class="resource card"><div class="resource-title">'+esc(r.name)+'</div><div class="resource-values"><input type="text" inputmode="numeric" pattern="-?[0-9]*" data-rcur="'+i+'" value="'+Number(r.current||0)+'">'+(r.max!==null&&r.max!==undefined?' <span>/</span> <input type="text" inputmode="numeric" pattern="-?[0-9]*" data-rmax="'+i+'" value="'+Number(r.max||0)+'" '+(["hp","mana"].includes(String(r.name).toLowerCase())?'readonly':'')+'>':'')+'</div></div>').join("");el.querySelectorAll("input").forEach(x=>{x.oninput=()=>{if(!/^-?\d+$/.test(x.value.trim()))return;const i=Number(x.dataset.rcur??x.dataset.rmax);if(x.dataset.rcur!==undefined)active.sheet.resources[i].current=Number(x.value);if(x.dataset.rmax!==undefined&&!x.readOnly)active.sheet.resources[i].max=Number(x.value);queueSave()};x.onblur=()=>{const i=Number(x.dataset.rcur??x.dataset.rmax);const r=active.sheet.resources[i];const value=x.dataset.rcur!==undefined?r.current:r.max;x.value=Number(value||0)}})}
 function updateDerivedResourceInputs(){
   if(!active?.sheet)return;
