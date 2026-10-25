@@ -11,3 +11,34 @@
 .stat input{min-width:0;text-align:center;padding:7px 2px}
 .stat-step{display:grid;place-items:center;width:30px;height:34px;padding:0;border:1px solid #76501e;border-radius:6px;background:#e6cf9e;color:#33230f;font:700 1.15rem system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
 .stat-step:active{background:#c6a668}
+
+/* Character dice roller */
+.dice-fab{position:fixed;z-index:55;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));width:60px;height:60px;display:grid;place-items:center;border:2px solid #cda75b;border-radius:50%;background:#4b351b;box-shadow:0 6px 20px #0009;color:#fff2ce;font-size:1.9rem;cursor:pointer;touch-action:manipulation}
+.dice-fab:active{transform:scale(.96)}
+.dice-overlay{position:fixed;inset:0;z-index:110;background:#000b;display:flex;align-items:center;justify-content:center;padding:16px;overscroll-behavior:contain}
+.dice-dialog{width:min(460px,100%);max-height:90vh;max-height:90dvh;overflow:auto;overscroll-behavior:contain}
+.dice-title{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.dice-title h2{margin:0}
+.dice-close{border:0;background:transparent;color:#33230f;font-size:2rem;line-height:1;cursor:pointer;padding:4px 10px}
+.dice-types{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
+.dice-type{display:flex;justify-content:space-between;align-items:center;gap:6px;border:1px solid #b6925b;border-radius:8px;background:#f8eac8;padding:8px}
+.dice-quantity{display:flex;align-items:center;gap:2px}
+.dice-quantity button{width:30px;height:34px;border:1px solid #76501e;border-radius:6px;background:#e6cf9e;color:#33230f;font-size:1.2rem;font-weight:700;cursor:pointer;touch-action:manipulation}
+.dice-quantity input{width:35px;min-width:0;padding:6px 2px;text-align:center;border:1px solid #a17d46;border-radius:5px;background:#fffaf0}
+.dice-dialog h3{margin:12px 0 8px}
+.dice-bonuses{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.dice-bonuses label{display:flex;align-items:center;gap:6px;border:1px solid #b6925b;border-radius:7px;background:#f8eac8;padding:9px;cursor:pointer}
+.dice-bonuses input{accent-color:#76501e;width:17px;height:17px}
+.dice-bonuses b{margin-left:auto}
+.dice-note{font-size:.82rem}
+.dice-primary{display:block;width:100%;font-size:1.05rem}
+.dice-result{text-align:center}
+.dice-result .dice-title{text-align:left}
+.dice-total{font-size:clamp(4rem,18vw,6.5rem);font-weight:700;line-height:1.15;color:#76501e;overflow-wrap:anywhere;animation:dice-pop .3s ease-out}
+.dice-details{max-height:220px;overflow:auto;text-align:left;line-height:1.6;overflow-wrap:anywhere;padding:10px 4px;border-top:1px solid #b6925b;border-bottom:1px solid #b6925b}
+.dice-rolling{text-align:center;padding:42px 18px}
+.dice-animated{display:inline-block;font-size:4rem;animation:dice-shake .18s ease-in-out infinite alternate}
+@keyframes dice-shake{from{transform:rotate(-18deg) translateY(-4px)}to{transform:rotate(18deg) translateY(4px)}}
+@keyframes dice-pop{from{transform:scale(.75);opacity:.4}to{transform:scale(1);opacity:1}}
+@media(max-width:420px){.dice-types{gap:6px}.dice-type{padding:6px}.dice-quantity button{width:28px}.dice-quantity input{width:31px}}
+@media(prefers-reduced-motion:reduce){.dice-animated,.dice-total{animation:none}}
