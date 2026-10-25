@@ -119,8 +119,15 @@ function openDice(){
     const additions=["Accuracy","Evasion","Strength","Attunement"].filter(k=>diceAdditions[k]).map(k=>({name:k,value:diceValue(k)}));
     const bonus=additions.reduce((sum,x)=>sum+x.value,0),total=diceTotal+bonus;
     diceSound();
-    overlay.innerHTML='<div class="paper dice-dialog dice-rolling" role="dialog" aria-modal="true"><div class="dice-animated">🎲</div><h2>Rolling…</h2></div>';
+    overlay.innerHTML=diceRollingScene(selected);
+    const changingFaces=setInterval(()=>{
+      if(!overlay.isConnected||!overlay.querySelector(".rolling-die")){clearInterval(changingFaces);return}
+      overlay.querySelectorAll(".rolling-die").forEach(die=>{
+        die.querySelector(".die-number").textContent=diceRandom(Number(die.dataset.rollingSides));
+      });
+    },90);
     setTimeout(()=>{
+      clearInterval(changingFaces);
       if(!overlay.isConnected)return;
       overlay.innerHTML='<div class="paper dice-dialog dice-result" role="dialog" aria-modal="true" aria-label="Dice result">'+
         '<div class="dice-title"><h2>Roll Result</h2><button type="button" class="dice-close" aria-label="Close">×</button></div>'+
@@ -130,7 +137,7 @@ function openDice(){
         '<p class="muted">Tap outside to dismiss, or roll again.</p><button type="button" id="diceAgain" class="btn dice-primary">Roll Again</button></div>';
       overlay.querySelector(".dice-close").onclick=closeDice;
       overlay.querySelector("#diceAgain").onclick=openDice;
-    },550);
+    },1450);
   };
   document.addEventListener("keydown",diceEscape);
 }
