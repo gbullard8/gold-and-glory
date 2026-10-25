@@ -31,7 +31,7 @@ function diceRandom(sides){
   }
   return 1+Math.floor(Math.random()*sides);
 }
-function closeDice(){document.getElementById("diceOverlay")?.remove();document.removeEventListener("keydown",diceEscape)}
+function closeDice(){stopDice3D();document.getElementById("diceOverlay")?.remove();document.removeEventListener("keydown",diceEscape)}
 function diceEscape(e){if(e.key==="Escape")closeDice()}
 let diceSoundEnabled=true;
 function diceSound(){
@@ -70,6 +70,132 @@ function diceShape(sides,number){
   };
   return '<svg class="rolling-die-svg" viewBox="0 0 100 100" aria-hidden="true"><g class="die-geometry">'+shapes[sides]+'</g><text x="50" y="58" text-anchor="middle" class="die-number">'+number+'</text></svg>';
 }
+
+/* Actual WebGL polyhedra, with the original SVG animation as an offline fallback. */
+let diceThreePromise=null,dice3DCleanup=null;
+function loadDiceThree(){
+  if(!diceThreePromise)diceThreePromise=import("https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js").catch(()=>null);
+  return diceThreePromise;
+}
+function stopDice3D(){if(dice3DCleanup){dice3DCleanup();dice3DCleanup=null}}
+function dice3DGeometry(THREE,sides){
+  if(sides===4)return new THREE.TetrahedronGeometry(.83);
+  if(sides===6)return new THREE.BoxGeometry(1.27,1.27,1.27);
+  if(sides===8)return new THREE.OctahedronGeometry(.88);
+  if(sides===12)return new THREE.DodecahedronGeometry(.85);
+  if(sides===20)return new THREE.IcosahedronGeometry(.88);
+  // A decagonal barrel for d10/d100, with ten numbered side faces.
+  return new THREE.CylinderGeometry(.76,.76,1.23,10,1,false);
+}
+function dice3DFaceLabels(THREE,mesh,geometry,sides){
+  const geo=geometry.index?geometry.toNonIndexed():geometry;
+  const positions=geo.getAttribute("position"),faces=[];
+  for(let i=0;i<positions.count;i+=3){
+    const a=new THREE.Vector3().fromBufferAttribute(positions,i);
+    const b=new THREE.Vector3().fromBufferAttribute(positions,i+1);
+    const c=new THREE.Vector3().fromBufferAttribute(positions,i+2);
+    const normal=b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+    // Only number the ten side faces on the barrel-shaped d10 and d100.
+    if((sides===10||sides===100)&&Math.abs(normal.y)>.45)continue;
+    const center=a.clone().add(b).add(c).divideScalar(3);
+    let group=faces.find(f=>f.normal.dot(normal)>.995);
+    if(!group){group={normal,center:new THREE.Vector3(),count:0};faces.push(group)}
+    group.center.add(center);group.count++;
+  }
+  faces.forEach((face,i)=>{
+    const canvas=document.createElement("canvas");canvas.width=128;canvas.height=128;
+    const context=canvas.getContext("2d");if(!context)return;
+    context.clearRect(0,0,128,128);
+    context.fillStyle="#fff3d0";context.strokeStyle="#40270f";context.lineWidth=8;
+    context.font="bold "+(sides===100?"57":"75")+"px Georgia,serif";
+    context.textAlign="center";context.textBaseline="middle";
+    const number=sides===100?String((i%10)*10).padStart(2,"0"):String(i%sides+1);
+    context.strokeText(number,64,68);context.fillText(number,64,68);
+    const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+    const material=new THREE.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,side:THREE.DoubleSide});
+    const size=sides===20?.30:sides===12?.37:sides===4?.46:.45;
+    const label=new THREE.Mesh(new THREE.PlaneGeometry(size,size),material);
+    label.position.copy(face.center.divideScalar(face.count)).addScaledVector(face.normal,.022);
+    label.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),face.normal);
+    mesh.add(label);
+  });
+  if(geo!==geometry)geo.dispose();
+}
+async function startDice3D(overlay,selected){
+  const THREE=await loadDiceThree();
+  if(!THREE||!overlay.isConnected)return;
+  const tray=overlay.querySelector(".dice-tray");if(!tray)return;
+  let renderer;
+  try{
+    renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,powerPreference:"low-power"});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.5));
+    renderer.outputColorSpace=THREE.SRGBColorSpace;
+  }catch(e){return}
+  const stage=document.createElement("div");stage.className="dice-three-stage";tray.appendChild(stage);
+  stage.appendChild(renderer.domElement);
+  tray.classList.add("dice-3d-active");
+  const scene=new THREE.Scene();
+  scene.add(new THREE.AmbientLight(0xffe9c6,1.5));
+  const light=new THREE.DirectionalLight(0xffffff,2.8);light.position.set(-3,5,7);scene.add(light);
+  const rim=new THREE.DirectionalLight(0xd3a45c,1.7);rim.position.set(4,-2,-3);scene.add(rim);
+  const camera=new THREE.OrthographicCamera(-5,5,2.5,-2.5,.1,50);camera.position.set(0,0,15);camera.lookAt(0,0,0);
+  const shown=[];
+  for(const n of selected){for(let i=0;i<diceAmounts[n]&&shown.length<8;i++)shown.push(n);if(shown.length===8)break}
+  const cols=Math.min(shown.length,4),rows=Math.ceil(shown.length/4),objects=[];
+  shown.forEach((sides,i)=>{
+    const geometry=dice3DGeometry(THREE,sides);
+    const palette=[0xa76c30,0x9d4f3c,0x486d6e,0x7c5c9e,0x517650,0xa67b32,0x91515a];
+    const material=new THREE.MeshStandardMaterial({color:palette[DICE_TYPES.indexOf(sides)],metalness:.24,roughness:.36,flatShading:true});
+    const mesh=new THREE.Mesh(geometry,material);
+    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry,14),new THREE.LineBasicMaterial({color:0xf8dc9c,transparent:true,opacity:.75}));
+    mesh.add(edges);
+    dice3DFaceLabels(THREE,mesh,geometry,sides);
+    const row=Math.floor(i/4),column=i%4,itemsInRow=Math.min(4,shown.length-row*4);
+    const x=(column-(itemsInRow-1)/2)*1.95;
+    const y=rows===1?0:(row===0?.93:-.93);
+    mesh.position.set(x,y,0);
+    mesh.rotation.set(i*.72+.2,i*1.3+.5,i*.44);
+    scene.add(mesh);
+    objects.push({mesh,x,y,spinX:(i%2?1:-1)*(8+i*.8),spinY:(i%3?1:-1)*(11+i*.7),spinZ:(i%2?1:-1)*(7+i*.5)});
+  });
+  let raf=0,disposed=false;
+  const resize=()=>{
+    const width=stage.clientWidth||tray.clientWidth||350,height=stage.clientHeight||220;
+    renderer.setSize(width,height,false);
+    const aspect=width/height;
+    camera.left=-2.8*aspect;camera.right=2.8*aspect;camera.top=2.8;camera.bottom=-2.8;camera.updateProjectionMatrix();
+  };
+  resize();window.addEventListener("resize",resize);
+  const started=performance.now(),reduced=window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  let previous=started;
+  const animate=now=>{
+    if(disposed||!overlay.isConnected)return;
+    const t=Math.min((now-started)/1450,1),dt=Math.min((now-previous)/1000,.05);previous=now;
+    const speed=reduced?0:Math.pow(1-t,1.2);
+    objects.forEach((obj,i)=>{
+      obj.mesh.rotation.x+=obj.spinX*dt*speed;
+      obj.mesh.rotation.y+=obj.spinY*dt*speed;
+      obj.mesh.rotation.z+=obj.spinZ*dt*speed;
+      obj.mesh.position.x=obj.x+(reduced?0:Math.sin(t*23+i*1.9)*.25*speed);
+      obj.mesh.position.y=obj.y+(reduced?0:Math.abs(Math.sin(t*17+i))*.9*speed);
+    });
+    renderer.render(scene,camera);
+    raf=requestAnimationFrame(animate);
+  };
+  raf=requestAnimationFrame(animate);
+  dice3DCleanup=()=>{
+    disposed=true;cancelAnimationFrame(raf);window.removeEventListener("resize",resize);
+    scene.traverse(obj=>{
+      if(obj.geometry)obj.geometry.dispose();
+      if(obj.material){
+        const materials=Array.isArray(obj.material)?obj.material:[obj.material];
+        materials.forEach(m=>{if(m.map)m.map.dispose();m.dispose()});
+      }
+    });
+    renderer.dispose();renderer.domElement.remove();stage.remove();
+  };
+}
+
 function diceRollingScene(selected){
   const shown=[];
   for(const sides of selected){for(let i=0;i<diceAmounts[sides]&&shown.length<8;i++)shown.push(sides);if(shown.length===8)break}
@@ -83,6 +209,7 @@ function diceRollingScene(selected){
 }
 function openDice(){
   if(!active?.sheet)return;
+  loadDiceThree().catch(()=>{});
   closeDice();
   const overlay=document.createElement("div");overlay.id="diceOverlay";overlay.className="dice-overlay";
   overlay.innerHTML='<div class="paper dice-dialog" role="dialog" aria-modal="true" aria-label="Dice roller">'+
@@ -120,6 +247,7 @@ function openDice(){
     const bonus=additions.reduce((sum,x)=>sum+x.value,0),total=diceTotal+bonus;
     diceSound();
     overlay.innerHTML=diceRollingScene(selected);
+    startDice3D(overlay,selected).catch(()=>{});
     const changingFaces=setInterval(()=>{
       if(!overlay.isConnected||!overlay.querySelector(".rolling-die")){clearInterval(changingFaces);return}
       overlay.querySelectorAll(".rolling-die").forEach(die=>{
@@ -128,6 +256,7 @@ function openDice(){
     },90);
     setTimeout(()=>{
       clearInterval(changingFaces);
+      stopDice3D();
       if(!overlay.isConnected)return;
       overlay.innerHTML='<div class="paper dice-dialog dice-result" role="dialog" aria-modal="true" aria-label="Dice result">'+
         '<div class="dice-title"><h2>Roll Result</h2><button type="button" class="dice-close" aria-label="Close">×</button></div>'+
